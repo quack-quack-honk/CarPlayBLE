@@ -259,20 +259,30 @@ void loop() {
       previousMillis = millis();
       String displayString = destination.getString();
       int len = (int)displayString.length();
-      int max_scroll = len - charsToDisplay;
-      if (max_scroll < 0) max_scroll = 0;
-      if (scroll_right && scroll_position >= max_scroll) scroll_right = false; else if (!scroll_right && scroll_position <= 0) scroll_right = true;
-      int end = scroll_position + charsToDisplay;
-      if (end > len) end = len;
-      String toDraw = displayString.substring(scroll_position, end);
-  // Pad to fixed width to keep cursor and width stable (avoids jitter)
-  while ((int)toDraw.length() < charsToDisplay) toDraw += " ";
-  // Draw without pre-clearing the full line to reduce flicker; background is applied per-glyph
-  gfx->setTextColor(0xFFFF, bgColor);
-  gfx->setTextSize(SIZE_DEST);
-  gfx->setCursor(X_DEST, Y_TITLE);
-  gfx->print(toDraw);
-      if (scroll_right) scroll_position += 1; else scroll_position -= 1;
+      if (len <= charsToDisplay) {
+        // Static title (no scroll), draw once and clear dirty flag
+        drawTextCentered(Y_TITLE, displayString, SIZE_DEST, 0xFFFF, bgColor);
+        destination.setBoolean(false);
+        scroll_position = 0;
+        scroll_right = true;
+      } else {
+        // Scroll with padding at start and end
+        String full = " " + displayString + " ";
+        int flen = (int)full.length();
+        int max_scroll = flen - charsToDisplay;
+        if (max_scroll < 0) max_scroll = 0;
+        if (scroll_right && scroll_position >= max_scroll) scroll_right = false;
+        else if (!scroll_right && scroll_position <= 0) scroll_right = true;
+        int end = scroll_position + charsToDisplay;
+        if (end > flen) end = flen;
+        String toDraw = full.substring(scroll_position, end);
+        while ((int)toDraw.length() < charsToDisplay) toDraw += " ";
+        gfx->setTextColor(0xFFFF, bgColor);
+        gfx->setTextSize(SIZE_DEST);
+        gfx->setCursor(X_DEST, Y_TITLE);
+        gfx->print(toDraw);
+        if (scroll_right) scroll_position += 1; else scroll_position -= 1;
+      }
     }
   // Icon and stacked texts
   if (directionPrecise.getBoolean()) { directionPrecise.setBoolean(false); drawDirectionImage(directionPrecise.getString()); }
