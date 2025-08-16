@@ -64,18 +64,19 @@ int SCREEN_W = 0, SCREEN_H = 0;
 int ICON_X = 0, ICON_Y = 0, ICON_W = 0, ICON_H = 0;
 // Text baselines and sizes (new layout)
 int SIZE_DEST = 3;       // Destination title size (top of screen)
-int SIZE_DIRDIST = 3;    // Large distance to next direction (under icon)
-int SIZE_DIRTXT = 2;     // Direction text
+int SIZE_DIRDIST = 6;    // Large distance to next direction (under icon) — doubled
+int SIZE_DIRTXT = 3;     // Direction text
 int SIZE_TIMELEFT = 3;   // Time remaining (ETA_Minute) on left
 int SIZE_DISTLEFT = 3;   // Distance remaining on right
+int SIZE_ETA = 3;        // ETA (clock time) in middle
 
 int Y_TITLE = 0;   // Destination title baseline (top)
 int Y_DIRDIST = 0; // Under icon
 int Y_DIRTXT = 0;  // Below distance-to-next
-int Y_BOTTOM = 0;  // Baseline for bottom row
+int Y_BOTTOM = 0;  // Baseline for bottom row (pinned near bottom)
 
 int X_DEST = 0; // stable X for destination scrolling (title)
-int X_LEFT_BOX = 0, X_RIGHT_BOX = 0, BOX_W = 0; // bottom row boxes
+int X_LEFT_BOX = 0, X_MID_BOX = 0, X_RIGHT_BOX = 0, BOX_W = 0; // bottom row boxes (three columns)
 
 static inline int lineHeight(int size) { return 8 * size + 4; } // default font 6x8 scaled, with padding
 
@@ -102,11 +103,18 @@ void computeLayout() {
   // Large distance to next, then direction text
   Y_DIRDIST = y; y += lineHeight(SIZE_DIRDIST) + 4;
   Y_DIRTXT = y; y += lineHeight(SIZE_DIRTXT) + 8;
-  // Bottom row
-  Y_BOTTOM = y;
-  BOX_W = SCREEN_W / 2;
+  // Bottom row pinned near bottom, height based on largest of the three sizes
+  int bottomH = lineHeight(SIZE_TIMELEFT);
+  int h2 = lineHeight(SIZE_DISTLEFT);
+  if (h2 > bottomH) bottomH = h2;
+  int h3 = lineHeight(SIZE_ETA);
+  if (h3 > bottomH) bottomH = h3;
+  Y_BOTTOM = SCREEN_H - bottomH - 2; // 2px bottom margin
+  // Three equal boxes across the width
+  BOX_W = SCREEN_W / 3;
   X_LEFT_BOX = 0;
-  X_RIGHT_BOX = BOX_W;
+  X_MID_BOX = BOX_W;
+  X_RIGHT_BOX = 2 * BOX_W;
   // Precompute a stable X for destination so we can redraw without clearing the whole line
   int destW = charsToDisplay * 6 * SIZE_DEST;
   X_DEST = (SCREEN_W - destW) / 2;
@@ -288,8 +296,9 @@ void loop() {
   if (directionPrecise.getBoolean()) { directionPrecise.setBoolean(false); drawDirectionImage(directionPrecise.getString()); }
   if (directionDistance.getBoolean()) { directionDistance.setBoolean(false); drawTextCentered(Y_DIRDIST, directionDistance.getString(), SIZE_DIRDIST, 0xFFFF, bgColor); }
   if (direction.getBoolean()) { direction.setBoolean(false); drawTextCentered(Y_DIRTXT, direction.getString(), SIZE_DIRTXT, 0xFFFF, bgColor); }
-  // Bottom row side-by-side
+  // Bottom row side-by-side (now three columns): time remaining, ETA, distance
   if (ETA_Minute.getBoolean()) { ETA_Minute.setBoolean(false); drawTextCenteredInBox(X_LEFT_BOX, BOX_W, Y_BOTTOM, ETA_Minute.getString(), SIZE_TIMELEFT, 0xFFFF, bgColor); }
+  if (ETA.getBoolean()) { ETA.setBoolean(false); drawTextCenteredInBox(X_MID_BOX, BOX_W, Y_BOTTOM, ETA.getString(), SIZE_ETA, 0xFFFF, bgColor); }
   if (distance.getBoolean()) { distance.setBoolean(false); drawTextCenteredInBox(X_RIGHT_BOX, BOX_W, Y_BOTTOM, distance.getString(), SIZE_DISTLEFT, 0xFFFF, bgColor); }
   }
 }
