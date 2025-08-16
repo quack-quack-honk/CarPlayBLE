@@ -62,15 +62,30 @@ const int charsToDisplay = 14;
 int SCREEN_W = 0, SCREEN_H = 0;
 // Icon placement (computed in layout)
 int ICON_X = 0, ICON_Y = 0, ICON_W = 0, ICON_H = 0;
-// Text baselines and sizes
-int SIZE_DEST = 2, SIZE_DIRTXT = 2, SIZE_DIRDIST = 2, SIZE_ETA = 3, SIZE_ETAMIN = 2, SIZE_DISTANCE = 2;
-int Y_DEST = 0, Y_DIRTXT = 0, Y_DIRDIST = 0, Y_ETA = 0, Y_ETAMIN = 0, Y_DISTANCE = 0;
+// Text baselines and sizes (new layout)
+int SIZE_DEST = 3;       // Destination title size (top of screen)
+int SIZE_DIRDIST = 3;    // Large distance to next direction (under icon)
+int SIZE_DIRTXT = 2;     // Direction text
+int SIZE_TIMELEFT = 3;   // Time remaining (ETA_Minute) on left
+int SIZE_DISTLEFT = 3;   // Distance remaining on right
+
+int Y_TITLE = 0;   // Destination title baseline (top)
+int Y_DIRDIST = 0; // Under icon
+int Y_DIRTXT = 0;  // Below distance-to-next
+int Y_BOTTOM = 0;  // Baseline for bottom row
+
+int X_DEST = 0; // stable X for destination scrolling (title)
+int X_LEFT_BOX = 0, X_RIGHT_BOX = 0, BOX_W = 0; // bottom row boxes
 
 static inline int lineHeight(int size) { return 8 * size + 4; } // default font 6x8 scaled, with padding
 
 void computeLayout() {
   SCREEN_W = gfx->width();
   SCREEN_H = gfx->height();
+
+  // Title at top
+  Y_TITLE = 2;
+  int titleH = lineHeight(SIZE_DEST);
 
   // Allocate ~50% of height for icon, capped to 90% of width to keep square
   int maxIconH = (int)(SCREEN_H * 0.5f);
@@ -81,15 +96,21 @@ void computeLayout() {
   ICON_W = target;
   ICON_H = target;
   ICON_X = (SCREEN_W - ICON_W) / 2;
-  ICON_Y = 4;
+  ICON_Y = Y_TITLE + titleH + 4;
 
-  int y = ICON_Y + ICON_H + 6;
-  Y_DEST = y; y += lineHeight(SIZE_DEST);
-  Y_DIRTXT = y; y += lineHeight(SIZE_DIRTXT);
-  Y_DIRDIST = y; y += lineHeight(SIZE_DIRDIST);
-  Y_ETA = y; y += lineHeight(SIZE_ETA);
-  Y_ETAMIN = y; y += lineHeight(SIZE_ETAMIN);
-  Y_DISTANCE = y; y += lineHeight(SIZE_DISTANCE);
+  int y = ICON_Y + ICON_H + 8;
+  // Large distance to next, then direction text
+  Y_DIRDIST = y; y += lineHeight(SIZE_DIRDIST) + 4;
+  Y_DIRTXT = y; y += lineHeight(SIZE_DIRTXT) + 8;
+  // Bottom row
+  Y_BOTTOM = y;
+  BOX_W = SCREEN_W / 2;
+  X_LEFT_BOX = 0;
+  X_RIGHT_BOX = BOX_W;
+  // Precompute a stable X for destination so we can redraw without clearing the whole line
+  int destW = charsToDisplay * 6 * SIZE_DEST;
+  X_DEST = (SCREEN_W - destW) / 2;
+  if (X_DEST < 0) X_DEST = 0;
 }
 
 // Basic centered text drawing using default 6px-wide glyphs
@@ -99,6 +120,19 @@ void drawTextCentered(int y, const String &text, int size, uint16_t color, uint1
   if (x < 0) x = 0;
   int h = 8 * size;
   gfx->fillRect(0, y, SCREEN_W, h + 2, bg);
+  gfx->setTextColor(color, bg);
+  gfx->setTextSize(size);
+  gfx->setCursor(x, y);
+  gfx->println(text);
+}
+
+// Center text inside a horizontal box
+void drawTextCenteredInBox(int x0, int w, int y, const String &text, int size, uint16_t color, uint16_t bg) {
+  int textW = (int)text.length() * 6 * size;
+  int x = x0 + (w - textW) / 2;
+  if (x < x0) x = x0;
+  int h = 8 * size;
+  gfx->fillRect(x0, y, w, h + 2, bg);
   gfx->setTextColor(color, bg);
   gfx->setTextSize(size);
   gfx->setCursor(x, y);
@@ -125,13 +159,16 @@ void IRAM_ATTR buttonPressed();
 class MyCallback : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic *c) override {
     auto uuid = c->getUUID().toString();
-    if (uuid == DESTINATION_UUID) destination.setString(c->getValue().c_str());
-    else if (uuid == ETA_UUID) ETA.setString(c->getValue().c_str());
-    else if (uuid == DIRECTION_UUID) direction.setString(c->getValue().c_str());
-    else if (uuid == DIRECTION_DISTANCE_UUID) directionDistance.setString(c->getValue().c_str());
-    else if (uuid == ETA_MINUTES_UUID) ETA_Minute.setString(c->getValue().c_str());
-    else if (uuid == DISTANCE_UUID) distance.setString(c->getValue().c_str());
-    else if (uuid == DIRECTION_PRECISE_UUID) directionPrecise.setString(c->getValue().c_str());
+  // Use Arduino String for portability (some BLE stacks return Arduino String)
+  String s = c->getValue();
+  // Only flag as edited if the new value differs to reduce redraw flicker
+  if (uuid == DESTINATION_UUID) { if (s != destination.getString()) destination.setString(s.c_str()); }
+  else if (uuid == ETA_UUID) { if (s != ETA.getString()) ETA.setString(s.c_str()); }
+  else if (uuid == DIRECTION_UUID) { if (s != direction.getString()) direction.setString(s.c_str()); }
+  else if (uuid == DIRECTION_DISTANCE_UUID) { if (s != directionDistance.getString()) directionDistance.setString(s.c_str()); }
+  else if (uuid == ETA_MINUTES_UUID) { if (s != ETA_Minute.getString()) ETA_Minute.setString(s.c_str()); }
+  else if (uuid == DISTANCE_UUID) { if (s != distance.getString()) distance.setString(s.c_str()); }
+  else if (uuid == DIRECTION_PRECISE_UUID) { if (s != directionPrecise.getString()) directionPrecise.setString(s.c_str()); }
   }
 };
 
@@ -146,7 +183,7 @@ void setup() {
   gfx->begin();
   gfx->Display_Brightness(200);
   gfx->setRotation(3); // match TTGO default orientation
-  bgColor = color565(56, 178, 92);
+  bgColor = 0x0000; // black background
   gfx->fillScreen(bgColor);
   gfx->setTextColor(0xFFFF, bgColor);
   gfx->setTextSize(1);
@@ -218,7 +255,6 @@ void loop() {
       ifConnectionStateChange = false;
     }
 
-    if (directionPrecise.getBoolean()) { directionPrecise.setBoolean(false); drawDirectionImage(directionPrecise.getString()); }
     if (destination.getBoolean() && millis() - previousMillis >= interval) {
       previousMillis = millis();
       String displayString = destination.getString();
@@ -229,15 +265,22 @@ void loop() {
       int end = scroll_position + charsToDisplay;
       if (end > len) end = len;
       String toDraw = displayString.substring(scroll_position, end);
-      // Destination (centered)
-      drawTextCentered(Y_DEST, toDraw, SIZE_DEST, 0xFFFF, bgColor);
+  // Pad to fixed width to keep cursor and width stable (avoids jitter)
+  while ((int)toDraw.length() < charsToDisplay) toDraw += " ";
+  // Draw without pre-clearing the full line to reduce flicker; background is applied per-glyph
+  gfx->setTextColor(0xFFFF, bgColor);
+  gfx->setTextSize(SIZE_DEST);
+  gfx->setCursor(X_DEST, Y_TITLE);
+  gfx->print(toDraw);
       if (scroll_right) scroll_position += 1; else scroll_position -= 1;
     }
-    if (direction.getBoolean()) { direction.setBoolean(false); drawTextCentered(Y_DIRTXT, direction.getString(), SIZE_DIRTXT, 0xFFFF, bgColor); }
-    if (directionDistance.getBoolean()) { directionDistance.setBoolean(false); drawTextCentered(Y_DIRDIST, directionDistance.getString(), SIZE_DIRDIST, 0xFFFF, bgColor); }
-    if (ETA.getBoolean()) { ETA.setBoolean(false); drawTextCentered(Y_ETA, ETA.getString(), SIZE_ETA, 0xFFFF, bgColor); }
-    if (ETA_Minute.getBoolean()) { ETA_Minute.setBoolean(false); drawTextCentered(Y_ETAMIN, ETA_Minute.getString(), SIZE_ETAMIN, 0xFFFF, bgColor); }
-    if (distance.getBoolean()) { distance.setBoolean(false); drawTextCentered(Y_DISTANCE, distance.getString(), SIZE_DISTANCE, 0xFFFF, bgColor); }
+  // Icon and stacked texts
+  if (directionPrecise.getBoolean()) { directionPrecise.setBoolean(false); drawDirectionImage(directionPrecise.getString()); }
+  if (directionDistance.getBoolean()) { directionDistance.setBoolean(false); drawTextCentered(Y_DIRDIST, directionDistance.getString(), SIZE_DIRDIST, 0xFFFF, bgColor); }
+  if (direction.getBoolean()) { direction.setBoolean(false); drawTextCentered(Y_DIRTXT, direction.getString(), SIZE_DIRTXT, 0xFFFF, bgColor); }
+  // Bottom row side-by-side
+  if (ETA_Minute.getBoolean()) { ETA_Minute.setBoolean(false); drawTextCenteredInBox(X_LEFT_BOX, BOX_W, Y_BOTTOM, ETA_Minute.getString(), SIZE_TIMELEFT, 0xFFFF, bgColor); }
+  if (distance.getBoolean()) { distance.setBoolean(false); drawTextCenteredInBox(X_RIGHT_BOX, BOX_W, Y_BOTTOM, distance.getString(), SIZE_DISTLEFT, 0xFFFF, bgColor); }
   }
 }
 
@@ -279,8 +322,8 @@ void drawDirectionImage(const char *direction) {
   else if (s == "32") bmp = SLIGHT_LEFT;
   else if (s == "33") bmp = SLIGHT_RIGHT;
 
-  // Clear icon area and draw scaled, centered icon
-  gfx->fillRect(0, 0, SCREEN_W, ICON_Y + ICON_H, bgColor);
+  // Clear icon area only and draw scaled, centered icon (avoid clearing title area)
+  gfx->fillRect(0, ICON_Y, SCREEN_W, ICON_H, bgColor);
   drawRGB565BitmapScaled(ICON_X, ICON_Y, (uint16_t*)bmp, 85, 85, ICON_W, ICON_H);
 }
 
