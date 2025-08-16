@@ -58,6 +58,66 @@ unsigned long previousMillis = 0;
 const long interval = 150;
 const int charsToDisplay = 14;
 
+// Dynamic layout metrics
+int SCREEN_W = 0, SCREEN_H = 0;
+// Icon placement (computed in layout)
+int ICON_X = 0, ICON_Y = 0, ICON_W = 0, ICON_H = 0;
+// Text baselines and sizes
+int SIZE_DEST = 2, SIZE_DIRTXT = 2, SIZE_DIRDIST = 2, SIZE_ETA = 3, SIZE_ETAMIN = 2, SIZE_DISTANCE = 2;
+int Y_DEST = 0, Y_DIRTXT = 0, Y_DIRDIST = 0, Y_ETA = 0, Y_ETAMIN = 0, Y_DISTANCE = 0;
+
+static inline int lineHeight(int size) { return 8 * size + 4; } // default font 6x8 scaled, with padding
+
+void computeLayout() {
+  SCREEN_W = gfx->width();
+  SCREEN_H = gfx->height();
+
+  // Allocate ~50% of height for icon, capped to 90% of width to keep square
+  int maxIconH = (int)(SCREEN_H * 0.5f);
+  int maxIconW = (int)(SCREEN_W * 0.9f);
+  int target = maxIconH;
+  if (target > maxIconW) target = maxIconW;
+  if (target < 85) target = 85; // never smaller than source
+  ICON_W = target;
+  ICON_H = target;
+  ICON_X = (SCREEN_W - ICON_W) / 2;
+  ICON_Y = 4;
+
+  int y = ICON_Y + ICON_H + 6;
+  Y_DEST = y; y += lineHeight(SIZE_DEST);
+  Y_DIRTXT = y; y += lineHeight(SIZE_DIRTXT);
+  Y_DIRDIST = y; y += lineHeight(SIZE_DIRDIST);
+  Y_ETA = y; y += lineHeight(SIZE_ETA);
+  Y_ETAMIN = y; y += lineHeight(SIZE_ETAMIN);
+  Y_DISTANCE = y; y += lineHeight(SIZE_DISTANCE);
+}
+
+// Basic centered text drawing using default 6px-wide glyphs
+void drawTextCentered(int y, const String &text, int size, uint16_t color, uint16_t bg) {
+  int textW = (int)text.length() * 6 * size;
+  int x = (SCREEN_W - textW) / 2;
+  if (x < 0) x = 0;
+  int h = 8 * size;
+  gfx->fillRect(0, y, SCREEN_W, h + 2, bg);
+  gfx->setTextColor(color, bg);
+  gfx->setTextSize(size);
+  gfx->setCursor(x, y);
+  gfx->println(text);
+}
+
+// Nearest-neighbor scale blit for RGB565 bitmaps
+void drawRGB565BitmapScaled(int x, int y, const uint16_t *src, int sw, int sh, int dw, int dh) {
+  for (int dy = 0; dy < dh; ++dy) {
+    int sy = (long)dy * sh / dh;
+    const uint16_t *row = src + sy * sw;
+    for (int dx = 0; dx < dw; ++dx) {
+      int sx = (long)dx * sw / dw;
+      uint16_t c = row[sx];
+      gfx->drawPixel(x + dx, y + dy, c);
+    }
+  }
+}
+
 // Forward decl
 void drawDirectionImage(const char *direction);
 void IRAM_ATTR buttonPressed();
@@ -90,6 +150,7 @@ void setup() {
   gfx->fillScreen(bgColor);
   gfx->setTextColor(0xFFFF, bgColor);
   gfx->setTextSize(1);
+  computeLayout();
 
   // BLE
   BLEDevice::init("Navigator");
@@ -143,47 +204,40 @@ void loop() {
       adv->setMinPreferred(0x12);
       BLEDevice::startAdvertising();
 
-  // Icon and label (icons are in native little-endian RGB565)
-  gfx->draw16bitRGBBitmap(77, 10, (uint16_t*)NO_CONNECTION, 85, 85);
-      gfx->setCursor(30, 95);
-      gfx->println("No Connection");
+  // Icon and label (centered, scaled)
+  gfx->fillRect(0, 0, SCREEN_W, ICON_Y + ICON_H + 2, bgColor);
+  drawRGB565BitmapScaled(ICON_X, ICON_Y, (uint16_t*)NO_CONNECTION, 85, 85, ICON_W, ICON_H);
+  drawTextCentered(ICON_Y + ICON_H + 6, "No Connection", 2, 0xFFFF, bgColor);
 
       ifConnectionStateChange = false;
     }
   } else {
     if (ifConnectionStateChange) {
-      gfx->setCursor(5, 5); gfx->println("ETA:");
-      gfx->setCursor(100, 30); gfx->println("left");
-      gfx->setCursor(100, 55); gfx->println("left");
+      // Clear dynamic area under icon when first connected
+      gfx->fillRect(0, ICON_Y + ICON_H + 2, SCREEN_W, SCREEN_H - (ICON_Y + ICON_H + 2), bgColor);
       ifConnectionStateChange = false;
     }
 
-    if (ETA.getBoolean()) { ETA.setBoolean(false); gfx->fillRect(70, 5, 120, 20, bgColor); gfx->setCursor(70, 5); gfx->println(ETA.getString()); }
-    if (ETA_Minute.getBoolean()) { ETA_Minute.setBoolean(false); gfx->fillRect(5, 30, 140, 20, bgColor); gfx->setCursor(5, 30); gfx->println(ETA_Minute.getString()); }
-    if (distance.getBoolean()) { distance.setBoolean(false); gfx->fillRect(5, 55, 140, 20, bgColor); gfx->setCursor(5, 55); gfx->println(distance.getString()); }
     if (directionPrecise.getBoolean()) { directionPrecise.setBoolean(false); drawDirectionImage(directionPrecise.getString()); }
-    if (directionDistance.getBoolean()) { directionPrecise.setBoolean(false); gfx->fillRect(183, 90, 120, 24, bgColor); gfx->setCursor(183, 90); gfx->println(directionDistance.getString()); }
-
     if (destination.getBoolean() && millis() - previousMillis >= interval) {
       previousMillis = millis();
-  String displayString = destination.getString();
-  int len = (int)displayString.length();
-  int max_scroll = len - charsToDisplay;
-  if (max_scroll < 0) max_scroll = 0;
+      String displayString = destination.getString();
+      int len = (int)displayString.length();
+      int max_scroll = len - charsToDisplay;
+      if (max_scroll < 0) max_scroll = 0;
       if (scroll_right && scroll_position >= max_scroll) scroll_right = false; else if (!scroll_right && scroll_position <= 0) scroll_right = true;
-  int end = scroll_position + charsToDisplay;
-  if (end > len) end = len;
-  String toDraw = displayString.substring(scroll_position, end);
-      gfx->fillRect(0, 90, 200, 22, bgColor);
-      gfx->setCursor(0, 90); gfx->println(toDraw);
+      int end = scroll_position + charsToDisplay;
+      if (end > len) end = len;
+      String toDraw = displayString.substring(scroll_position, end);
+      // Destination (centered)
+      drawTextCentered(Y_DEST, toDraw, SIZE_DEST, 0xFFFF, bgColor);
       if (scroll_right) scroll_position += 1; else scroll_position -= 1;
     }
-
-    if (direction.getBoolean()) {
-      direction.setBoolean(false);
-      gfx->fillRect(5, 115, 300, 20, bgColor);
-      gfx->setCursor(5, 115); gfx->println(direction.getString());
-    }
+    if (direction.getBoolean()) { direction.setBoolean(false); drawTextCentered(Y_DIRTXT, direction.getString(), SIZE_DIRTXT, 0xFFFF, bgColor); }
+    if (directionDistance.getBoolean()) { directionDistance.setBoolean(false); drawTextCentered(Y_DIRDIST, directionDistance.getString(), SIZE_DIRDIST, 0xFFFF, bgColor); }
+    if (ETA.getBoolean()) { ETA.setBoolean(false); drawTextCentered(Y_ETA, ETA.getString(), SIZE_ETA, 0xFFFF, bgColor); }
+    if (ETA_Minute.getBoolean()) { ETA_Minute.setBoolean(false); drawTextCentered(Y_ETAMIN, ETA_Minute.getString(), SIZE_ETAMIN, 0xFFFF, bgColor); }
+    if (distance.getBoolean()) { distance.setBoolean(false); drawTextCentered(Y_DISTANCE, distance.getString(), SIZE_DISTANCE, 0xFFFF, bgColor); }
   }
 }
 
@@ -225,9 +279,9 @@ void drawDirectionImage(const char *direction) {
   else if (s == "32") bmp = SLIGHT_LEFT;
   else if (s == "33") bmp = SLIGHT_RIGHT;
 
-  gfx->fillRect(155, 0, 85, 85, bgColor);
-  // Icons are 85x85 RGB565 arrays stored as uint16_t (little-endian in memory)
-  gfx->draw16bitRGBBitmap(155, 0, (uint16_t*)bmp, 85, 85);
+  // Clear icon area and draw scaled, centered icon
+  gfx->fillRect(0, 0, SCREEN_W, ICON_Y + ICON_H, bgColor);
+  drawRGB565BitmapScaled(ICON_X, ICON_Y, (uint16_t*)bmp, 85, 85, ICON_W, ICON_H);
 }
 
 void IRAM_ATTR buttonPressed() {
@@ -235,5 +289,6 @@ void IRAM_ATTR buttonPressed() {
     lastDebounceTime = millis();
     orientation = !orientation;
     gfx->setRotation(orientation ? 3 : 1);
+  computeLayout();
   }
 }
