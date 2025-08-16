@@ -1,0 +1,12 @@
+# Ignore the Waveshare example bundle and generated artifacts
+ESP32-waveshare-amoled-1.8-example/
+
+# Arduino build outputs
+*.elf
+*.bin
+*.map
+*.hex
+*.log
+
+# VSCode
+.vscode/
