@@ -143,8 +143,8 @@ void loop() {
       adv->setMinPreferred(0x12);
       BLEDevice::startAdvertising();
 
-      // Icon and label
-  gfx->draw16bitBeRGBBitmap(77, 10, (uint16_t*)NO_CONNECTION, 85, 85);
+  // Icon and label (icons are in native little-endian RGB565)
+  gfx->draw16bitRGBBitmap(77, 10, (uint16_t*)NO_CONNECTION, 85, 85);
       gfx->setCursor(30, 95);
       gfx->println("No Connection");
 
@@ -226,8 +226,8 @@ void drawDirectionImage(const char *direction) {
   else if (s == "33") bmp = SLIGHT_RIGHT;
 
   gfx->fillRect(155, 0, 85, 85, bgColor);
-  // Icons are 85x85 RGB565 arrays; beRGB variant matches TFT_eSPI swapBytes(true)
-  gfx->draw16bitBeRGBBitmap(155, 0, (uint16_t*)bmp, 85, 85);
+  // Icons are 85x85 RGB565 arrays stored as uint16_t (little-endian in memory)
+  gfx->draw16bitRGBBitmap(155, 0, (uint16_t*)bmp, 85, 85);
 }
 
 void IRAM_ATTR buttonPressed() {
