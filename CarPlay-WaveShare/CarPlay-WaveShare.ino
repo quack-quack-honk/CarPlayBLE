@@ -9,8 +9,8 @@
 #include "pin_config.h"  // provided by your Waveshare setup
 
 // Reuse data model and icons from TTGO project
-#include "../CarPlay-TTGO/lib/Information/Information.h"
-#include "../CarPlay-TTGO/lib/Icons/Icons.h"
+#include "./lib/Information/Information.h"
+#include "./lib/Icons/Icons.h"
 
 // BLE UUIDs (unchanged)
 #define SERVICE_UUID "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
